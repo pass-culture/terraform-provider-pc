@@ -15,7 +15,7 @@ import (
 var _ datasource.DataSource = (*documentDataSource)(nil)
 
 type documentDataSource struct {
-	provider firestoreProvider
+	provider passcultureProvider
 }
 
 func NewFirestoreDocumentDataSource() datasource.DataSource {
@@ -23,7 +23,7 @@ func NewFirestoreDocumentDataSource() datasource.DataSource {
 }
 
 func (e *documentDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_document"
+	resp.TypeName = req.ProviderTypeName + "_firestore_document"
 }
 
 func (e *documentDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {

@@ -21,7 +21,7 @@ func TestAccFirestoreDocument_basic(t *testing.T) {
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
-			"firestore": providerserver.NewProtocol6WithError(New()()),
+			"passculture": providerserver.NewProtocol6WithError(New()()),
 		},
 		ExternalProviders: map[string]resource.ExternalProvider{
 			"google": {VersionConstraint: "6.16.0", Source: "google"},
@@ -37,7 +37,7 @@ resource "google_firestore_document" "test" {
   fields      = "{\"key1\":{\"stringValue\":\"avalue\"}, \"key2\":{\"integerValue\":\"5\"}, \"key3\":{\"booleanValue\":true}}"
 }
 
-data "firestore_document" "test" {
+data "passculture_firestore_document" "test" {
   project = %q
   database = google_firestore_document.test.database
   collection = google_firestore_document.test.collection
@@ -45,17 +45,17 @@ data "firestore_document" "test" {
 }`, projectID, projectID),
 				ConfigStateChecks: []statecheck.StateCheck{
 					statecheck.ExpectKnownValue(
-						"data.firestore_document.test",
+						"data.passculture_firestore_document.test",
 						tfjsonpath.New("fields").AtMapKey("key1"),
 						knownvalue.StringExact("avalue"),
 					),
 					statecheck.ExpectKnownValue(
-						"data.firestore_document.test",
+						"data.passculture_firestore_document.test",
 						tfjsonpath.New("fields").AtMapKey("key2"),
 						knownvalue.Int64Exact(5),
 					),
 					statecheck.ExpectKnownValue(
-						"data.firestore_document.test",
+						"data.passculture_firestore_document.test",
 						tfjsonpath.New("fields").AtMapKey("key3"),
 						knownvalue.Bool(true),
 					),
