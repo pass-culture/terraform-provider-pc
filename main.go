@@ -7,8 +7,15 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 
-	"github.com/pass-culture/pc-terraform-providers/terraform-provider-firestore/internal/provider"
+	"github.com/pass-culture/pc-terraform-providers/internal/provider"
 )
+
+// these will be set by the goreleaser configuration
+// to appropriate values for the compiled binary.
+var version string = "dev"
+
+// goreleaser can pass other information to the main package, such as the specific commit
+// https://goreleaser.com/cookbooks/using-main.version/
 
 func main() {
 	var debug bool
