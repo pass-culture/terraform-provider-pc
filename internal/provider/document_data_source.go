@@ -46,7 +46,7 @@ func (e *documentDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 				Required:            true,
 			},
 			"fields": schema.DynamicAttribute{
-				MarkdownDescription: "Document fields",
+				MarkdownDescription: "Document fields (supports nested maps and lists)",
 				Computed:            true,
 			},
 		},
@@ -66,64 +66,85 @@ func (e *documentDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	diags := req.Config.Get(ctx, &data)
 	resp.Diagnostics.Append(diags...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	client, err := firestore.NewClientWithDatabase(ctx, data.Project.ValueString(), data.Database.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Could not init firestore SDK",
-			err.Error(),
-		)
+		resp.Diagnostics.AddError("Could not init Firestore SDK", err.Error())
 		return
 	}
 	defer client.Close()
+
 	documentPath := fmt.Sprintf("%s/%s", data.Collection.ValueString(), data.DocumentID.ValueString())
-	tflog.Info(ctx, documentPath)
+	tflog.Info(ctx, "Reading Firestore document", map[string]any{"path": documentPath})
+
 	firestoreDoc := client.Doc(documentPath)
 	if firestoreDoc == nil {
-		resp.Diagnostics.AddError(
-			"Invalid document path",
-			"Path must be a list of string separated by slashes of even length. It must not start with a /",
-		)
+		resp.Diagnostics.AddError("Invalid document path", "Path must be a valid Firestore document reference")
 		return
 	}
+
 	doc, err := firestoreDoc.Get(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Could not find document",
-			err.Error(),
-		)
+		resp.Diagnostics.AddError("Could not find document", err.Error())
 		return
 	}
-	newFields := make(map[string]attr.Value, len(doc.Data()))
-	newFieldsTypes := make(map[string]attr.Type, len(doc.Data()))
-	for key, untypedValue := range doc.Data() {
-		switch value := untypedValue.(type) {
-		case bool:
-			newFields[key] = types.DynamicValue(types.BoolValue(value))
-			newFieldsTypes[key] = newFields[key].Type(ctx)
-		case string:
-			newFields[key] = types.DynamicValue(types.StringValue(value))
-			newFieldsTypes[key] = newFields[key].Type(ctx)
-		case int64:
-			newFields[key] = types.DynamicValue(types.Int64Value(value))
-			newFieldsTypes[key] = newFields[key].Type(ctx)
-		case nil:
-			newFields[key] = types.StringNull()
-			newFieldsTypes[key] = newFields[key].Type(ctx)
-		default:
-			resp.Diagnostics.AddError(
-				"Invalid data type in firestore",
-				fmt.Sprintf(`Only Boolean, String, Integer and null values are readable via this provider`),
-			)
-		}
+
+	val, err := convertToDynamic(ctx, doc.Data())
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to convert Firestore data", err.Error())
+		return
 	}
-	mapValue, diags := types.ObjectValue(newFieldsTypes, newFields)
-	resp.Diagnostics.Append(diags...)
-	data.Fields = types.DynamicValue(mapValue)
+
+	data.Fields = types.DynamicValue(val)
+
 	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)
+}
+
+// convertToDynamic recursively converts Firestore structures into Terraform attr.Values
+func convertToDynamic(ctx context.Context, value any) (attr.Value, error) {
+	switch v := value.(type) {
+	case bool:
+		return types.BoolValue(v), nil
+	case string:
+		return types.StringValue(v), nil
+	case int64:
+		return types.Int64Value(v), nil
+	case float64:
+		return types.Float64Value(v), nil
+	case nil:
+		return types.StringNull(), nil
+	case map[string]any:
+		fields := make(map[string]attr.Value)
+		fieldTypes := make(map[string]attr.Type)
+		for k, nested := range v {
+			nestedVal, err := convertToDynamic(ctx, nested)
+			if err != nil {
+				return nil, err
+			}
+			fields[k] = nestedVal
+			fieldTypes[k] = nestedVal.Type(ctx)
+		}
+		return types.ObjectValueMust(fieldTypes, fields), nil
+	case []any:
+		if len(v) == 0 {
+			return types.ListNull(types.StringType), nil
+		}
+		elements := make([]attr.Value, len(v))
+		var elemType attr.Type = types.StringType
+		for i, elem := range v {
+			converted, err := convertToDynamic(ctx, elem)
+			if err != nil {
+				return nil, err
+			}
+			elements[i] = converted
+			elemType = converted.Type(ctx)
+		}
+		return types.ListValueMust(elemType, elements), nil
+	default:
+		return nil, fmt.Errorf("unsupported Firestore type: %T", v)
+	}
 }
