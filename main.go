@@ -7,7 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 
-	"github.com/pass-culture/pc-terraform-providers/internal/provider"
+	"github.com/pass-culture/terraform-provider-pc/internal/provider"
 )
 
 // these will be set by the goreleaser configuration

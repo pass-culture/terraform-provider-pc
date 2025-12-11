@@ -1,4 +1,4 @@
-module github.com/pass-culture/pc-terraform-providers
+module github.com/pass-culture/terraform-provider-pc
 
 go 1.24.0
 
