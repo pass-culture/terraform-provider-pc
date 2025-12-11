@@ -10,6 +10,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var _ datasource.DataSource = (*documentDataSource)(nil)
@@ -45,6 +47,11 @@ func (e *documentDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 				MarkdownDescription: "Document ID",
 				Required:            true,
 			},
+			"optional": schema.BoolAttribute{
+				MarkdownDescription: `If set to true and the corresponding document on firestore does not exist.
+The data source will not error and return an empty value instead`,
+				Optional: true,
+			},
 			"fields": schema.DynamicAttribute{
 				MarkdownDescription: "Document fields (supports nested maps and lists)",
 				Computed:            true,
@@ -59,6 +66,7 @@ type documentDataSourceData struct {
 	Collection types.String  `tfsdk:"collection"`
 	DocumentID types.String  `tfsdk:"document_id"`
 	Fields     types.Dynamic `tfsdk:"fields"`
+	Optional   types.Bool    `tfsdk:"optional"`
 }
 
 func (e *documentDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
@@ -75,7 +83,12 @@ func (e *documentDataSource) Read(ctx context.Context, req datasource.ReadReques
 		resp.Diagnostics.AddError("Could not init Firestore SDK", err.Error())
 		return
 	}
-	defer client.Close()
+
+	defer func() {
+		if err := client.Close(); err != nil {
+			tflog.Warn(ctx, "could not firestore close client")
+		}
+	}()
 
 	documentPath := fmt.Sprintf("%s/%s", data.Collection.ValueString(), data.DocumentID.ValueString())
 	tflog.Info(ctx, "Reading Firestore document", map[string]any{"path": documentPath})
@@ -88,7 +101,17 @@ func (e *documentDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	doc, err := firestoreDoc.Get(ctx)
 	if err != nil {
-		resp.Diagnostics.AddError("Could not find document", err.Error())
+		if status.Code(err) == codes.NotFound {
+			if !data.Optional.ValueBool() {
+				resp.Diagnostics.AddError("Could not find document", err.Error())
+			} else {
+				data.Fields = types.DynamicNull()
+				diags = resp.State.Set(ctx, &data)
+				resp.Diagnostics.Append(diags...)
+				return
+			}
+		}
+		resp.Diagnostics.AddError("Unexpected error", err.Error())
 		return
 	}
 
